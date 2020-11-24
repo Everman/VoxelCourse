@@ -34,6 +34,11 @@ public class World : MonoBehaviour
     public static int redstone_startDepth = 20;
     public static float redstone_fBMCutoff = 0.41f;
 
+    public GameObject player;
+    public static int radius = 1;
+
+    bool firstBuild = true;
+    bool building = false;
 
     public Material textureAtlas;
     public static Dictionary<string, Chunk> chunks;
@@ -57,30 +62,74 @@ public class World : MonoBehaviour
     }
 
     IEnumerator BuildWorld() {
-        for (int z = 0; z < worldSize; z++) {
-            for (int x = 0; x < worldSize; x++) {
+        building = true;
+        int posX = (int)Mathf.Floor(player.transform.position.x / chunkSize);
+        int posZ = (int)Mathf.Floor(player.transform.position.z / chunkSize);
+        
+        float totalChunks = (Mathf.Pow((radius * 2) + 1, 2) * columnHeight) * 2;
+        int processCount = 0;
+
+        for (int z = -radius; z <= radius; z++) {
+            for (int x = -radius; x <= radius; x++) {
                 for (int y = 0; y < columnHeight; y++) {
-                    Vector3 chunkPosition = new Vector3(x * chunkSize, y * chunkSize, z * chunkSize );
-                    Chunk chunk = new Chunk(chunkPosition, textureAtlas);
-                    chunk.chunk.transform.parent = this.transform;
-                    chunks.Add(chunk.chunk.name, chunk);
+                    Vector3 chunkPosition = new Vector3((x+posX) * chunkSize, y * chunkSize, (z + posZ) * chunkSize );
+                    Chunk chunk;
+                    string name = BuildChunkName(chunkPosition);
+                    if(chunks.TryGetValue(name, out chunk)) {
+                        chunk.status = Chunk.ChunkStatus.KEEP;
+                        break;
+                    } else {
+                        chunk = new Chunk(chunkPosition, textureAtlas);
+                        chunk.chunk.transform.parent = this.transform;
+                        chunks.Add(chunk.chunk.name, chunk);
+                    }
+
+                    if (firstBuild) {
+                        processCount++;
+                    }
+                    
+                    yield return null;
                 }
             }
         }
         
         foreach(KeyValuePair<string, Chunk> chunk in chunks) {
-            chunk.Value.DrawChunk();
+            if(chunk.Value.status == Chunk.ChunkStatus.DRAW) {
+                chunk.Value.DrawChunk();
+                chunk.Value.status = Chunk.ChunkStatus.KEEP;
+            }
+
+            // delete old chunks here
+
+            chunk.Value.status = Chunk.ChunkStatus.DONE;
+            if (firstBuild) {
+                processCount++;
+            }
+
             yield return null;
         }
-        
+
+        if (firstBuild) {
+            player.SetActive(true);
+            firstBuild = false;
+        }
+
+        building = false;
     }
 
     // Start is called before the first frame update
     void Start()
     {
+        player.SetActive(false);
         chunks = new Dictionary<string, Chunk>();
         this.transform.position = Vector3.zero;
         this.transform.rotation = Quaternion.identity;
         StartCoroutine(BuildWorld());
+    }
+
+    private void Update() {
+        if(!building && !firstBuild) {
+            StartCoroutine(BuildWorld());
+        }
     }
 }
